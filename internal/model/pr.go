@@ -13,6 +13,22 @@ const (
 	GitLab Platform = "gitlab"
 )
 
+// DefaultURL is the public instance used when no URL is configured.
+func DefaultURL(p Platform) string {
+	if p == GitLab {
+		return "https://gitlab.com"
+	}
+	return "https://github.com"
+}
+
+// PlatformName is the display name, e.g. "GitHub".
+func PlatformName(p Platform) string {
+	if p == GitLab {
+		return "GitLab"
+	}
+	return "GitHub"
+}
+
 type CIStatus string
 
 const (
@@ -36,6 +52,7 @@ const BehindUnknown = -1
 
 type PR struct {
 	Platform  Platform
+	Host      string // instance host, e.g. github.com or gitlab.archlinux.org
 	Repo      string // owner/repo or group/subgroup/project
 	Number    int
 	Title     string
@@ -61,7 +78,16 @@ type PR struct {
 }
 
 func (p *PR) Key() string {
-	return fmt.Sprintf("%s:%s#%d", p.Platform, p.Repo, p.Number)
+	return fmt.Sprintf("%s:%s/%s#%d", p.Platform, p.Host, p.Repo, p.Number)
+}
+
+// RepoLabel is the repository as shown in the table: prefixed with the host for self-hosted
+// instances, so identically named projects on different instances can be told apart.
+func (p *PR) RepoLabel() string {
+	if p.Host == "" || "https://"+p.Host == DefaultURL(p.Platform) {
+		return p.Repo
+	}
+	return p.Host + "/" + p.Repo
 }
 
 func (p *PR) HasNews() bool {

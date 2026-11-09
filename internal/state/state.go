@@ -68,9 +68,9 @@ func (s *State) Annotate(prs []*model.PR) {
 	}
 }
 
-// Record stores the current snapshot for the given platform, dropping PRs that are no longer open.
-func (s *State) Record(p model.Platform, prs []*model.PR) {
-	prefix := string(p) + ":"
+// Record stores the current snapshot for one instance, dropping its PRs that are no longer open.
+func (s *State) Record(p model.Platform, host string, prs []*model.PR) {
+	prefix := string(p) + ":" + host + "/"
 	for k := range s.Entries {
 		if strings.HasPrefix(k, prefix) {
 			delete(s.Entries, k)

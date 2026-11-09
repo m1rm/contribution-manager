@@ -98,7 +98,7 @@ func Table(w io.Writer, prs []*model.PR, o Options) {
 
 		row := table.Row{
 			marker + " " + platform,
-			pr.Repo,
+			pr.RepoLabel(),
 			link(o, pr.URL, fmt.Sprintf("%s%d", numPrefix, pr.Number)),
 			title,
 			ci(pr.CI),

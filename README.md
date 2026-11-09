@@ -2,14 +2,15 @@
 
 A small, read-only CLI that shows **all your open pull requests on GitHub and merge requests on GitLab
 in one colored terminal table** – so you don't have to log in to both platforms to check on your
-contributions.
+contributions. Self-hosted GitLab and GitHub Enterprise Server instances work too, and you can watch
+several instances at once.
 
 For every open PR/MR it tells you:
 
 | Column | Meaning |
 |---|---|
 | `●` | Something changed since your last run (these rows are sorted to the top) |
-| **Repository / #** | Where the PR lives. `#123` (GitHub) / `!45` (GitLab) are clickable in terminals that support OSC 8 links |
+| **Repository / #** | Where the PR lives (prefixed with the host for self-hosted instances). `#123` (GitHub) / `!45` (GitLab) are clickable in terminals that support OSC 8 links |
 | **CI** | `✔` passed · `✘` failed · `●` running |
 | **Review** | `approved` · `changes` requested · `pending` |
 | **Comments** | Comments by *other people*; `+2 7` = 2 new since last run, 7 total |
@@ -61,8 +62,32 @@ Edit `.env`:
 ```sh
 PRWATCH_GITHUB_TOKEN=ghp_...
 PRWATCH_GITLAB_TOKEN=glpat-...
-# PRWATCH_GITLAB_URL=https://gitlab.example.com   # only for self-hosted GitLab
 ```
+
+Each platform defaults to its public instance. For a self-hosted GitLab or GitHub Enterprise Server,
+set the URL next to the token:
+
+```sh
+PRWATCH_GITLAB_URL=https://gitlab.example.com
+PRWATCH_GITHUB_URL=https://github.example.com   # API paths (/api/v3, /api/graphql) are derived
+```
+
+#### Several instances
+
+To watch more than one instance per platform, repeat the token/URL pair with a suffix of your choice
+(letters, digits, `_`). Every suffixed token needs its own URL, unless it points to the public instance:
+
+```sh
+PRWATCH_GITLAB_TOKEN=glpat-...                     # gitlab.com
+PRWATCH_GITLAB_TOKEN_ARCH=glpat-...
+PRWATCH_GITLAB_URL_ARCH=https://gitlab.archlinux.org
+PRWATCH_GITHUB_TOKEN=ghp_...                       # github.com
+PRWATCH_GITHUB_TOKEN_WORK=ghp_...
+PRWATCH_GITHUB_URL_WORK=https://github.example.com
+```
+
+All instances are queried in parallel. `--github` / `--gitlab` select all instances of a platform.
+Configuring the same host twice is an error.
 
 `just` loads `.env` automatically. `.env` is git-ignored, so your tokens stay local.
 The variables are prefixed with `PRWATCH_` so they don't clash with a `GITHUB_TOKEN` that other tools
@@ -71,13 +96,15 @@ may already have set in your shell. `just` does not override variables that are 
 ### 4. Run
 
 ```sh
-just
+just list
 ```
+
+Plain `just` shows all available recipes.
 
 ## Usage
 
 ```sh
-just list               # GitHub + GitLab (same as: just list --all, or just `just`)
+just list               # all configured instances (same as: just list --all)
 just list --github      # GitHub only   (shortcut: just github)
 just list --gitlab      # GitLab only   (shortcut: just gitlab)
 just list --urls        # add a column with full URLs
@@ -105,12 +132,13 @@ Colors and links are turned off automatically when the output is piped, or when 
 - GitHub: the last 100 comments/reviews and the first 50 review threads (50 comments each) per PR are
   counted. Reaction counts include your own reactions.
 - GitLab: reactions are counted on the MR itself, not on individual comments.
-- If one platform fails (e.g. an expired token), the other one is still shown, and the error is printed.
+- If one instance fails (e.g. an expired token), the other one is still shown, and the error is printed.
 
 ## Project layout
 
 ```
 main.go                 CLI flags and orchestration
+internal/config         instances (token + URL) from PRWATCH_* variables
 internal/github         GraphQL search + REST compare (behind-by) per PR
 internal/gitlab         REST: MRs, divergence, pipeline, notes, award emoji, approvals
 internal/state          "last seen" snapshot for new-activity detection

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -15,14 +16,20 @@ import (
 
 type Client struct {
 	base  string // e.g. https://gitlab.com
+	host  string // e.g. gitlab.com
 	token string
 }
 
 func New(baseURL, token string) *Client {
 	if baseURL == "" {
-		baseURL = "https://gitlab.com"
+		baseURL = model.DefaultURL(model.GitLab)
 	}
-	return &Client{base: strings.TrimRight(baseURL, "/"), token: token}
+	base := strings.TrimRight(baseURL, "/")
+	host := base
+	if u, err := url.Parse(base); err == nil && u.Host != "" {
+		host = u.Host
+	}
+	return &Client{base: base, host: host, token: token}
 }
 
 func (c *Client) get(ctx context.Context, path string, out any) (*http.Response, error) {
@@ -90,6 +97,7 @@ func (c *Client) enrich(ctx context.Context, m mrSummary, me string) *model.PR {
 	repo, _, _ := strings.Cut(m.References.Full, "!")
 	pr := &model.PR{
 		Platform:  model.GitLab,
+		Host:      c.host,
 		Repo:      repo,
 		Number:    m.IID,
 		Title:     m.Title,

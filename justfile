@@ -3,8 +3,9 @@ set positional-arguments
 
 bin := "bin/prwatch"
 
-# Show all open PRs/MRs (same as `just list`)
-default: list
+# Show available recipes
+default:
+    @just --list
 
 # List open PRs/MRs. Flags: --all (default) --github --gitlab --keep --urls --width N
 list *args: build

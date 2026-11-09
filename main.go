@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 
 	"github.com/jedib0t/go-pretty/v6/text"
 
+	"prwatch/internal/config"
 	"prwatch/internal/github"
 	"prwatch/internal/gitlab"
 	"prwatch/internal/model"
@@ -28,9 +30,13 @@ Usage:
 
 Environment:
   PRWATCH_GITHUB_TOKEN   GitHub personal access token
+  PRWATCH_GITHUB_URL     GitHub URL (default: https://github.com; GitHub Enterprise Server works too)
   PRWATCH_GITLAB_TOKEN   GitLab personal access token (scope: read_api)
-  PRWATCH_GITLAB_URL     GitLab base URL (default: https://gitlab.com)
+  PRWATCH_GITLAB_URL     GitLab URL (default: https://gitlab.com)
   NO_COLOR               disable colors
+
+  More instances: add the same variables with a common suffix, e.g.
+  PRWATCH_GITLAB_TOKEN_ARCH + PRWATCH_GITLAB_URL_ARCH=https://gitlab.archlinux.org
 `
 
 func main() {
@@ -62,10 +68,8 @@ func main() {
 }
 
 type source struct {
-	platform model.Platform
-	name     string
-	token    string
-	fetch    func(context.Context) ([]*model.PR, error)
+	inst  config.Instance
+	fetch func(context.Context) ([]*model.PR, error)
 }
 
 type result struct {
@@ -88,34 +92,37 @@ func runList(args []string) error {
 		text.DisableColors()
 	}
 
-	ghToken := os.Getenv("PRWATCH_GITHUB_TOKEN")
-	glToken := os.Getenv("PRWATCH_GITLAB_TOKEN")
-	sources := []source{
-		{model.GitHub, "GitHub", ghToken, github.New(ghToken).OpenPRs},
-		{model.GitLab, "GitLab", glToken, gitlab.New(os.Getenv("PRWATCH_GITLAB_URL"), glToken).OpenMRs},
+	instances, warnings, err := config.FromEnv()
+	if err != nil {
+		return err
+	}
+	for _, w := range warnings {
+		fmt.Fprintln(os.Stderr, text.Faint.Sprint(w))
 	}
 
-	explicit := *onlyGH || *onlyGL
-	if *all {
-		explicit = false
+	explicit := (*onlyGH || *onlyGL) && !*all
+	wanted := func(p model.Platform) bool {
+		return !explicit || (p == model.GitHub && *onlyGH) || (p == model.GitLab && *onlyGL)
 	}
 	var active []source
-	for _, s := range sources {
-		wanted := !explicit || (s.platform == model.GitHub && *onlyGH) || (s.platform == model.GitLab && *onlyGL)
-		if !wanted {
+	for _, in := range instances {
+		if !wanted(in.Platform) {
 			continue
 		}
-		if s.token == "" {
-			envName := "PRWATCH_" + map[model.Platform]string{model.GitHub: "GITHUB", model.GitLab: "GITLAB"}[s.platform] + "_TOKEN"
-			if explicit {
-				return fmt.Errorf("%s requested but %s is not set", s.name, envName)
-			}
-			fmt.Fprintln(os.Stderr, text.Faint.Sprintf("skipping %s: %s not set", s.name, envName))
-			continue
+		s := source{inst: in}
+		if in.Platform == model.GitHub {
+			s.fetch = github.New(in.URL, in.Token).OpenPRs
+		} else {
+			s.fetch = gitlab.New(in.URL, in.Token).OpenMRs
 		}
 		active = append(active, s)
 	}
 	if len(active) == 0 {
+		for _, p := range []model.Platform{model.GitHub, model.GitLab} {
+			if explicit && wanted(p) {
+				return fmt.Errorf("%s requested but no PRWATCH_%s_TOKEN is set", model.PlatformName(p), strings.ToUpper(string(p)))
+			}
+		}
 		return fmt.Errorf("no tokens configured – set PRWATCH_GITHUB_TOKEN and/or PRWATCH_GITLAB_TOKEN (see .env.example)")
 	}
 
@@ -148,13 +155,13 @@ func runList(args []string) error {
 	for i, r := range results {
 		if r.err != nil {
 			failed++
-			fmt.Fprintf(os.Stderr, "%s %s: %v\n", text.FgRed.Sprint("✘"), active[i].name, r.err)
+			fmt.Fprintf(os.Stderr, "%s %s: %v\n", text.FgRed.Sprint("✘"), active[i].inst.Name(), r.err)
 			continue
 		}
 		st.Annotate(r.prs)
 		prs = append(prs, r.prs...)
 		if !*keep {
-			st.Record(active[i].platform, r.prs)
+			st.Record(active[i].inst.Platform, active[i].inst.Host(), r.prs)
 		}
 	}
 	if failed == len(active) {

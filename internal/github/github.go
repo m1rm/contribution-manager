@@ -13,13 +13,35 @@ import (
 	"prwatch/internal/model"
 )
 
-const apiBase = "https://api.github.com"
-
 type Client struct {
-	token string
+	host    string // e.g. github.com
+	restAPI string // e.g. https://api.github.com
+	graphql string // e.g. https://api.github.com/graphql
+	token   string
 }
 
-func New(token string) *Client { return &Client{token: token} }
+// New creates a client for github.com or a GitHub Enterprise Server instance, given its web URL
+// (e.g. https://github.com or https://github.example.com). An empty URL means github.com.
+func New(baseURL, token string) *Client {
+	if baseURL == "" {
+		baseURL = model.DefaultURL(model.GitHub)
+	}
+	u, err := url.Parse(strings.TrimRight(baseURL, "/"))
+	if err != nil || u.Host == "" {
+		u, _ = url.Parse(model.DefaultURL(model.GitHub))
+	}
+	c := &Client{host: u.Host, token: token}
+	switch strings.ToLower(u.Host) {
+	case "github.com", "www.github.com", "api.github.com":
+		c.host = "github.com"
+		c.restAPI = "https://api.github.com"
+		c.graphql = "https://api.github.com/graphql"
+	default: // GitHub Enterprise Server
+		c.restAPI = u.String() + "/api/v3"
+		c.graphql = u.String() + "/api/graphql"
+	}
+	return c
+}
 
 func (c *Client) headers() map[string]string {
 	return map[string]string{
@@ -131,7 +153,7 @@ func (c *Client) OpenPRs(ctx context.Context) ([]*model.PR, error) {
 				"after": after,
 			},
 		}
-		if _, err := httpx.Do(ctx, http.MethodPost, apiBase+"/graphql", c.headers(), body, &resp); err != nil {
+		if _, err := httpx.Do(ctx, http.MethodPost, c.graphql, c.headers(), body, &resp); err != nil {
 			return nil, err
 		}
 		if len(resp.Errors) > 0 {
@@ -155,7 +177,9 @@ func (c *Client) OpenPRs(ctx context.Context) ([]*model.PR, error) {
 	}
 
 	for _, n := range nodes {
-		prs = append(prs, convert(n, login))
+		pr := convert(n, login)
+		pr.Host = c.host
+		prs = append(prs, pr)
 	}
 
 	// How far behind the base branch is each PR? One REST call per PR, in parallel.
@@ -245,7 +269,7 @@ func (c *Client) behindBy(ctx context.Context, n prNode) int {
 		segs[i] = url.PathEscape(s)
 	}
 	u := fmt.Sprintf("%s/repos/%s/compare/%s...%s?per_page=1",
-		apiBase, n.Repository.NameWithOwner, strings.Join(segs, "/"), n.HeadRefOid)
+		c.restAPI, n.Repository.NameWithOwner, strings.Join(segs, "/"), n.HeadRefOid)
 	var resp struct {
 		BehindBy int `json:"behind_by"`
 	}
