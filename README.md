@@ -109,6 +109,7 @@ just list --github      # GitHub only   (shortcut: just github)
 just list --gitlab      # GitLab only   (shortcut: just gitlab)
 just list --urls        # add a column with full URLs
 just list --width 70    # allow longer titles (default 48)
+just list --json        # JSON for scripts/agents: adds branches, fork repo and fetch errors
 just peek               # show new activity without marking it as seen
 just reset              # forget what was seen; the next run becomes the new baseline
 ```

@@ -51,14 +51,20 @@ const (
 const BehindUnknown = -1
 
 type PR struct {
-	Platform  Platform
-	Host      string // instance host, e.g. github.com or gitlab.archlinux.org
-	Repo      string // owner/repo or group/subgroup/project
-	Number    int
-	Title     string
-	URL       string
-	Draft     bool
-	UpdatedAt time.Time
+	Platform Platform
+	Host     string // instance host, e.g. github.com or gitlab.archlinux.org
+	Repo     string // owner/repo or group/subgroup/project
+	RepoURL  string // web URL of the target repository
+	Number   int
+	Title    string
+	URL      string
+	Draft    bool
+
+	BaseBranch  string // target branch
+	HeadBranch  string // source branch
+	HeadRepo    string // source repository (differs from Repo for forks); empty if unknown/deleted
+	HeadRepoURL string
+	UpdatedAt   time.Time
 
 	// Activity by people other than the token owner.
 	Comments      int

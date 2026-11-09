@@ -59,8 +59,9 @@ query($q: String!, $after: String) {
     nodes {
       ... on PullRequest {
         number title url isDraft updatedAt
-        repository { nameWithOwner }
-        baseRefName headRefOid mergeable reviewDecision
+        repository { nameWithOwner url }
+        headRepository { nameWithOwner url }
+        baseRefName headRefName headRefOid mergeable reviewDecision
         reactions { totalCount }
         comments(last: 100) {
           nodes { author { login } createdAt reactions { totalCount } }
@@ -93,8 +94,10 @@ type prNode struct {
 	URL            string
 	IsDraft        bool
 	UpdatedAt      time.Time
-	Repository     struct{ NameWithOwner string }
+	Repository     struct{ NameWithOwner, URL string }
+	HeadRepository *struct{ NameWithOwner, URL string }
 	BaseRefName    string
+	HeadRefName    string
 	HeadRefOid     string
 	Mergeable      string
 	ReviewDecision string
@@ -191,16 +194,24 @@ func (c *Client) OpenPRs(ctx context.Context) ([]*model.PR, error) {
 
 func convert(n prNode, me string) *model.PR {
 	pr := &model.PR{
-		Platform:  model.GitHub,
-		Repo:      n.Repository.NameWithOwner,
-		Number:    n.Number,
-		Title:     n.Title,
-		URL:       n.URL,
-		Draft:     n.IsDraft,
-		UpdatedAt: n.UpdatedAt,
-		Conflicts: n.Mergeable == "CONFLICTING",
-		Reactions: n.Reactions.TotalCount,
-		Behind:    model.BehindUnknown,
+		Platform:   model.GitHub,
+		Repo:       n.Repository.NameWithOwner,
+		RepoURL:    n.Repository.URL,
+		BaseBranch: n.BaseRefName,
+		HeadBranch: n.HeadRefName,
+		Number:     n.Number,
+		Title:      n.Title,
+		URL:        n.URL,
+		Draft:      n.IsDraft,
+		UpdatedAt:  n.UpdatedAt,
+		Conflicts:  n.Mergeable == "CONFLICTING",
+		Reactions:  n.Reactions.TotalCount,
+		Behind:     model.BehindUnknown,
+	}
+
+	if n.HeadRepository != nil {
+		pr.HeadRepo = n.HeadRepository.NameWithOwner
+		pr.HeadRepoURL = n.HeadRepository.URL
 	}
 
 	isOther := func(a *actor) bool { return a == nil || !strings.EqualFold(a.Login, me) }

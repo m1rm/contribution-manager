@@ -24,7 +24,7 @@ import (
 const usage = `prwatch – your open PRs/MRs on GitHub and GitLab
 
 Usage:
-  prwatch list [--all | --github | --gitlab] [--keep] [--urls] [--width N]
+  prwatch list [--all | --github | --gitlab] [--keep] [--urls] [--width N] [--json]
   prwatch reset          forget what was seen (next run becomes the new baseline)
   prwatch state-path     print where the seen-state is stored
 
@@ -85,9 +85,10 @@ func runList(args []string) error {
 	keep := fs.Bool("keep", false, "don't mark activity as seen")
 	urls := fs.Bool("urls", false, "add a column with full URLs")
 	width := fs.Int("width", 48, "max title width")
+	asJSON := fs.Bool("json", false, "print JSON instead of a table (includes branches and fetch errors)")
 	fs.Parse(args)
 
-	plain := os.Getenv("NO_COLOR") != "" || !isTerminal()
+	plain := *asJSON || os.Getenv("NO_COLOR") != "" || !isTerminal()
 	if plain {
 		text.DisableColors()
 	}
@@ -151,10 +152,10 @@ func runList(args []string) error {
 	}
 
 	var prs []*model.PR
-	failed := 0
+	var fetchErrs []render.JSONError
 	for i, r := range results {
 		if r.err != nil {
-			failed++
+			fetchErrs = append(fetchErrs, render.JSONError{Instance: active[i].inst.Name(), Error: r.err.Error()})
 			fmt.Fprintf(os.Stderr, "%s %s: %v\n", text.FgRed.Sprint("✘"), active[i].inst.Name(), r.err)
 			continue
 		}
@@ -164,12 +165,18 @@ func runList(args []string) error {
 			st.Record(active[i].inst.Platform, active[i].inst.Host(), r.prs)
 		}
 	}
-	if failed == len(active) {
+	if len(fetchErrs) == len(active) {
 		return fmt.Errorf("all sources failed")
 	}
 
 	render.Sort(prs)
-	render.Table(os.Stdout, prs, render.Options{ShowURLs: *urls, TitleWidth: *width, Plain: plain})
+	if *asJSON {
+		if err := render.JSON(os.Stdout, prs, fetchErrs); err != nil {
+			return err
+		}
+	} else {
+		render.Table(os.Stdout, prs, render.Options{ShowURLs: *urls, TitleWidth: *width, Plain: plain})
+	}
 
 	if !*keep {
 		if err := st.Save(); err != nil {

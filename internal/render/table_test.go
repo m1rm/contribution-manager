@@ -2,6 +2,7 @@ package render
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -33,5 +34,33 @@ func TestTable(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q", want)
 		}
+	}
+}
+
+func TestJSON(t *testing.T) {
+	var buf bytes.Buffer
+	prs := []*model.PR{
+		{Platform: model.GitLab, Host: "gitlab.example.com", Repo: "g/p", Number: 7, BaseBranch: "main", HeadBranch: "fix", Behind: 3},
+		{Platform: model.GitHub, Host: "github.com", Repo: "o/r", Number: 1, Behind: model.BehindUnknown},
+	}
+	if err := JSON(&buf, prs, nil); err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		PRs []struct {
+			Behind     *int   `json:"behind"`
+			BaseBranch string `json:"base_branch"`
+			HeadBranch string `json:"head_branch"`
+		} `json:"prs"`
+		Errors []JSONError `json:"errors"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.PRs) != 2 || out.PRs[0].Behind == nil || *out.PRs[0].Behind != 3 || out.PRs[1].Behind != nil {
+		t.Errorf("behind not encoded as expected: %s", buf.String())
+	}
+	if out.PRs[0].BaseBranch != "main" || out.PRs[0].HeadBranch != "fix" || out.Errors == nil {
+		t.Errorf("unexpected output: %s", buf.String())
 	}
 }

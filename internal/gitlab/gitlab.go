@@ -38,14 +38,17 @@ func (c *Client) get(ctx context.Context, path string, out any) (*http.Response,
 }
 
 type mrSummary struct {
-	IID          int       `json:"iid"`
-	ProjectID    int       `json:"project_id"`
-	Title        string    `json:"title"`
-	WebURL       string    `json:"web_url"`
-	Draft        bool      `json:"draft"`
-	UpdatedAt    time.Time `json:"updated_at"`
-	HasConflicts bool      `json:"has_conflicts"`
-	References   struct {
+	IID             int       `json:"iid"`
+	ProjectID       int       `json:"project_id"`
+	SourceProjectID int       `json:"source_project_id"`
+	SourceBranch    string    `json:"source_branch"`
+	TargetBranch    string    `json:"target_branch"`
+	Title           string    `json:"title"`
+	WebURL          string    `json:"web_url"`
+	Draft           bool      `json:"draft"`
+	UpdatedAt       time.Time `json:"updated_at"`
+	HasConflicts    bool      `json:"has_conflicts"`
+	References      struct {
 		Full string `json:"full"`
 	} `json:"references"`
 }
@@ -95,18 +98,35 @@ func (c *Client) OpenMRs(ctx context.Context) ([]*model.PR, error) {
 
 func (c *Client) enrich(ctx context.Context, m mrSummary, me string) *model.PR {
 	repo, _, _ := strings.Cut(m.References.Full, "!")
+	projectURL, _, _ := strings.Cut(m.WebURL, "/-/merge_requests/")
 	pr := &model.PR{
-		Platform:  model.GitLab,
-		Host:      c.host,
-		Repo:      repo,
-		Number:    m.IID,
-		Title:     m.Title,
-		URL:       m.WebURL,
-		Draft:     m.Draft,
-		UpdatedAt: m.UpdatedAt,
-		Conflicts: m.HasConflicts,
-		Behind:    model.BehindUnknown,
+		Platform:   model.GitLab,
+		Host:       c.host,
+		Repo:       repo,
+		Number:     m.IID,
+		Title:      m.Title,
+		URL:        m.WebURL,
+		Draft:      m.Draft,
+		RepoURL:    projectURL,
+		BaseBranch: m.TargetBranch,
+		HeadBranch: m.SourceBranch,
+		UpdatedAt:  m.UpdatedAt,
+		Conflicts:  m.HasConflicts,
+		Behind:     model.BehindUnknown,
 	}
+	pr.HeadRepo, pr.HeadRepoURL = repo, pr.RepoURL
+	if m.SourceProjectID != 0 && m.SourceProjectID != m.ProjectID {
+		// MR from a fork: look up the source project (best effort; may be deleted or not readable).
+		pr.HeadRepo, pr.HeadRepoURL = "", ""
+		var src struct {
+			Path   string `json:"path_with_namespace"`
+			WebURL string `json:"web_url"`
+		}
+		if _, err := c.get(ctx, fmt.Sprintf("/projects/%d", m.SourceProjectID), &src); err == nil {
+			pr.HeadRepo, pr.HeadRepoURL = src.Path, src.WebURL
+		}
+	}
+
 	mrPath := fmt.Sprintf("/projects/%d/merge_requests/%d", m.ProjectID, m.IID)
 
 	// Upstream divergence + pipeline status.
